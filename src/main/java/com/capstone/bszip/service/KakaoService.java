@@ -131,7 +131,7 @@ public class KakaoService {
         String nickname = memberInfo.get("nickname").toString();
 
         Member kakaoMember = memberRepository.findByEmail(kakaoEmail).orElse(null);
-
+        
         // 회원가입
         if(kakaoMember == null) {
             kakaoMember = new Member();
@@ -139,6 +139,11 @@ public class KakaoService {
             kakaoMember.setNickname(nickname);
             kakaoMember.setMemberJoinType(MemberJoinType.KAKAO);
             memberRepository.save(kakaoMember);
+        } else if (kakaoMember.getMemberJoinType() == MemberJoinType.DEFAULT) {
+            // 기존 회원가입한 회원의 경우에 카카오 로그인 시 에러메시지 전송
+            String errorCode = "E01";
+            String errorMesssage ="기존 회원가입 이력이 있는 회원입니다.";
+            return new LoginResponse(errorCode, errorMesssage);
         }
         Long uid = kakaoMember.getId();
         AuthTokens token = authTokensGenerator.generate(kakaoMember.getId());
