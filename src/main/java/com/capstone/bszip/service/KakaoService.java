@@ -127,7 +127,6 @@ public class KakaoService {
     }
 
     private LoginResponse kakaoUserLogin(HashMap<String, Object> memberInfo) {
-        Long uid = Long.valueOf(memberInfo.get("id").toString());
         String kakaoEmail = memberInfo.get("email").toString();
         String nickname = memberInfo.get("nickname").toString();
 
@@ -141,6 +140,7 @@ public class KakaoService {
             kakaoMember.setMemberJoinType(MemberJoinType.KAKAO);
             memberRepository.save(kakaoMember);
         }
+        Long uid = kakaoMember.getId();
         AuthTokens token = authTokensGenerator.generate(kakaoMember.getId());
         return new LoginResponse(uid, nickname, kakaoEmail, token);
     }
