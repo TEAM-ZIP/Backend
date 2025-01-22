@@ -1,9 +1,11 @@
 package com.capstone.bszip.repository;
 
 import com.capstone.bszip.domain.Member;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
-
-public interface MemberRepository {
+@Repository
+public interface MemberRepository extends JpaRepository<Member, Long> {
     Optional<Member> findByEmail(String email);
 }
