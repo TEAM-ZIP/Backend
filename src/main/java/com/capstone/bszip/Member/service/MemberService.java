@@ -1,75 +1,102 @@
 package com.capstone.bszip.Member.service;
 
 import com.capstone.bszip.Member.domain.Member;
+import com.capstone.bszip.Member.domain.MemberJoinType;
+import com.capstone.bszip.Member.domain.TempMember;
 import com.capstone.bszip.Member.repository.MemberRepository;
 import com.capstone.bszip.Member.security.JwtUtil;
 import com.capstone.bszip.Member.service.dto.LoginRequest;
 import com.capstone.bszip.Member.service.dto.SignupRequest;
 import com.capstone.bszip.Member.service.dto.SignupAddRequest;
+import jakarta.servlet.http.HttpSession;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 @Service
 public class MemberService {
-    private final MemberRepository memberRepository;
-    private final PasswordEncoder passwordEncoder;
 
-    private final Map<String, String> temporaryStorage = new HashMap<>(); // 임시 데이터 저장소
+    @Autowired
+    private MemberRepository memberRepository;
+    @Autowired
+    private BCryptPasswordEncoder passwordEncoder;
+    @Autowired
+    private TempMemberService tempMemberService;
 
-    public MemberService(MemberRepository memberRepository, PasswordEncoder passwordEncoder) {
-        this.memberRepository = memberRepository;
-        this.passwordEncoder = passwordEncoder;
+
+    // 이메일 중복 체크 -> 회원 가입 시 이용
+    public boolean checkEmailDuplication(String email) {
+        return memberRepository.existsByEmail(email);
     }
 
-    @Transactional
-    public void registerMember(SignupRequest signupRequest){
-        //이메일 중복 확인
-        if (memberRepository.existsByEmail(signupRequest.getEmail())) {
-            throw new IllegalArgumentException("이미 존재하는 이메일입니다.");
-        }
-        temporaryStorage.put(signupRequest.getEmail(), passwordEncoder.encode(signupRequest.getPassword())); // 이메일-비밀번호 임시 저장
+    // 닉네임 중복 체크 -> 회원 가입 및 닉네임 재설정 시 이용
+    public boolean checkNicknameDuplication(String nickname) {
+        return memberRepository.existsByNickname(nickname);
     }
-    @Transactional
-    public void registerMemberNickname(String email,String nickname){
-        // 이메일이 임시 저장소에 없으면 에러 처리
-        if (!temporaryStorage.containsKey(email)) {
-            throw new IllegalArgumentException("임시 저장소에 해당 이메일 정보가 없습니다. 다시 진행해주세요.");
-        }
-        // 임시 저장소에서 비밀번호 가져오기
-        String password = temporaryStorage.get(email);
 
-        //닉네임 중복 확인
-        if (memberRepository.existsByNickname(nickname)){
-            throw new IllegalArgumentException("이미 존재하는 닉네임입니다.");
-        }
-        // 최종 회원가입 처리
+    // 비밀번호 해쉬 처리
+    public String makeHashedPassword(String password) {
+        return passwordEncoder.encode(password);
+    }
+
+    // redis에 이메일, 해쉬된 비밀번호 저장
+    public void registerEmailandPassword(@RequestBody SignupRequest signupRequest) {
+        TempMember tempMember = new TempMember(signupRequest.getEmail(), makeHashedPassword(signupRequest.getPassword()));
+        tempMemberService.saveTempMember(tempMember);
+    }
+
+    public boolean existFirstStep(HttpSession session) {
+        String email = (String) session.getAttribute("signupEmail");
+        return email != null;
+    }
+
+    public boolean existTempMember(HttpSession session) {
+        TempMember tempMember = tempMemberService.getTempMember(session.getAttribute("signupEmail").toString());
+        return tempMember != null;
+    }
+
+    public void registerMember(@RequestBody SignupAddRequest signupAddRequest, HttpSession session) {
+        TempMember tempMember = tempMemberService.getTempMember(session.getAttribute("signupEmail").toString());
         Member member = new Member();
-        //사용자 정보 설정
-        member.setEmail(email);
-        member.setPassword(password);
-        member.setCreatedAt(LocalDateTime.now());
-        member.setUpdatedAt(LocalDateTime.now());
-        member.setNickname(nickname);
-
+        member.setEmail(tempMember.getEmail());
+        member.setPassword(tempMember.getPassword());
+        member.setNickname(signupAddRequest.getNickname());
+        member.setMemberJoinType(MemberJoinType.DEFAULT);
         memberRepository.save(member);
 
-        // 임시 저장소에서 데이터 삭제
-        temporaryStorage.remove(email);
+        tempMemberService.deleteTempMember(tempMember.getEmail());
+        session.removeAttribute("signupEmail");
     }
 
-    @Transactional
-    public String loginUser(LoginRequest loginRequest){
+    public void loginMember(@RequestBody LoginRequest loginRequest, HttpSession session) {
+        // Session Fixation 방지 코드 추가 필요
         Member member = memberRepository.findByEmail(loginRequest.getEmail())
-                .orElseThrow(() -> new RuntimeException("존재하지 않는 이메일입니다."));
-        if(!passwordEncoder.matches(loginRequest.getPassword(), member.getPassword())) {
-            throw new RuntimeException("일치하지 않는 비밀번호입니다.");
+                .orElseThrow(()-> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "잘못된 이메일 혹은 비밀번호"));
+        if (!passwordEncoder.matches(loginRequest.getPassword(), member.getPassword())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "잘못된 이메일 혹은 비밀번호");
         }
-        return JwtUtil.generateToken(member.getEmail());
+        Authentication authentication = new UsernamePasswordAuthenticationToken(
+                new User(member.getEmail(), "", Collections.emptyList()),
+                null,
+                Collections.emptyList()
+        );
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        session.setAttribute("SPRING_SECURITY_CONTEXT", SecurityContextHolder.getContext());
+
     }
 }
 
