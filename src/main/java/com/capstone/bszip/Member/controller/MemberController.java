@@ -1,6 +1,7 @@
 package com.capstone.bszip.Member.controller;
 
 import com.capstone.bszip.Member.service.dto.TokenResponse;
+import com.capstone.bszip.auth.AuthService;
 import com.capstone.bszip.auth.security.JwtUtil;
 import com.capstone.bszip.Member.service.MemberService;
 import com.capstone.bszip.Member.service.dto.LoginRequest;
@@ -13,25 +14,26 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Date;
 import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
 @Tag(name = "Member", description = "회원 관리 API")
+@RequestMapping("/auth")
 public class MemberController {
     private final MemberService memberService;
-    private final AuthenticationManagerBuilder authenticationManagerBuilder;
+    private final AuthService authService;
 
     //회원 가입
     @PostMapping("/signup")
@@ -106,6 +108,32 @@ public class MemberController {
         }catch(Exception e){
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("message", e.getMessage()));
+        }
+    }
+    //로그아웃
+    @PostMapping("/logout")
+    @Operation(summary = "로그아웃", description = "refresh token을 삭제하며 로그아웃합니다.")
+    @ApiResponse(responseCode = "200", description = "로그아웃 성공",
+            content = @Content(schema = @Schema(implementation = TokenResponse.class)))
+    @ApiResponse(responseCode = "500", description = "서버 내부 오류",
+            content = @Content(schema = @Schema(implementation = Map.class)))
+    public ResponseEntity<?> logout(HttpServletRequest httpServletRequest){
+        String authorizationHeader = httpServletRequest.getHeader("Authorization");
+
+        if(authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")){
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error","토큰을 찾을 수 없습니다"));
+        }
+        String accessToken = authorizationHeader.substring(7);
+        try {
+            String email = JwtUtil.extractEmail(accessToken);
+            Date expirationDate = JwtUtil.getExpiration(accessToken);
+            authService.logout(email, accessToken, expirationDate);
+
+            return ResponseEntity.ok().body(Map.of("message", "로그아웃 성공"));
+        } catch (JwtException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 }

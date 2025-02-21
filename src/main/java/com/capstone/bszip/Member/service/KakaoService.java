@@ -147,7 +147,7 @@ public class KakaoService {
         if(memberOptional.isPresent()){
             Member member = memberOptional.get();
             RefreshToken token = new RefreshToken();
-            token.setMemberId(member.getMemberId());
+            token.setEmail(member.getEmail());
             token.setRefreshToken(refreshToken);
             token.setExpiryDate(Instant.now().plusSeconds(7 * 24 * 60 * 60));
 

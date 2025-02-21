@@ -4,6 +4,8 @@ import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
@@ -21,11 +23,11 @@ public class JwtUtil {
     }
 
     private static final long TEMP_TOKEN_EXPIRATION = 1000 * 60 * 30; // 30분
-    private static final long ACCESS_TOKEN_EXPIRE_TIME = 1000 * 60 * 60 ; // 1시간
-    private static final long REFRESH_TOKEN_EXPIRE_TIME= 1000 * 60 * 60 * 24 *7; // 7일
+    private static final long ACCESS_TOKEN_EXPIRE_TIME = 1000 * 60 * 60; // 1시간
+    private static final long REFRESH_TOKEN_EXPIRE_TIME = 1000 * 60 * 60 * 24 * 7; // 7일
 
     private static Key getSigningKey() {
-        if(key==null){
+        if (key == null) {
             throw new IllegalStateException("jwt key가 초기화되지 않음");
         }
         return key;
@@ -33,15 +35,17 @@ public class JwtUtil {
 
     // 이메일 임시 토큰 생성
     public static String issueTempToken(String email) {
-        Date now = new Date();
+        Date now = new Date(System.currentTimeMillis());
+        Date tempTokenExpiredAt = new Date((now).getTime() + TEMP_TOKEN_EXPIRATION);
 
         return Jwts.builder()
                 .setSubject(email)
                 .setIssuedAt(now)
-                .setExpiration(new Date(now.getTime() + TEMP_TOKEN_EXPIRATION))
+                .setExpiration(tempTokenExpiredAt)
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
+
     // 토큰에서 이메일 추출
     public static String extractEmail(String token) {
         try {
@@ -55,28 +59,30 @@ public class JwtUtil {
             throw new JwtException("유효하지 않은 토큰입니다.");
         }
     }
+
     // JWT access token 생성
-    public static String createAccessToken(String email){
-        long now = (new Date()).getTime();
-        Date accessTokenExpiredAt = new Date(now+ACCESS_TOKEN_EXPIRE_TIME);
+    public static String createAccessToken(String email) {
+        Date now = new Date(System.currentTimeMillis());
+        Date accessTokenExpiredAt = new Date((now).getTime() + ACCESS_TOKEN_EXPIRE_TIME);
 
         return Jwts.builder()
-                .claim("member_email",email)
                 .setSubject(email)
+                .setIssuedAt(now)
                 .setExpiration(accessTokenExpiredAt)
-                .signWith(key, SignatureAlgorithm.HS256)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
+
     // JWT refresh token 생성
-    public static String createRefreshToken(String email){
-        long now = (new Date()).getTime();
-        Date refreshTokenExpiredAt = new Date(now+REFRESH_TOKEN_EXPIRE_TIME);
+    public static String createRefreshToken(String email) {
+        Date now = new Date(System.currentTimeMillis());
+        Date refreshTokenExpiredAt = new Date((now).getTime()+ REFRESH_TOKEN_EXPIRE_TIME);
 
         return Jwts.builder()
-                .claim("member_email",email)
                 .setSubject(email)
+                .setIssuedAt(now)
                 .setExpiration(refreshTokenExpiredAt)
-                .signWith(key, SignatureAlgorithm.HS256)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
@@ -88,5 +94,13 @@ public class JwtUtil {
                 .parseClaimsJws(token)
                 .getBody();
     }
+
+    // JWT 토큰에서 만료 시간 추출
+    public static Date getExpiration(String token){
+        Claims claim = extractToken(token);
+        return claim.getExpiration();
+    }
+
+
 }
 
